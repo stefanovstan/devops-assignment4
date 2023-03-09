@@ -1,0 +1,111 @@
+---
+- hosts: localhost
+  gather_facts: yes
+  become: yes
+  tasks:
+    - name: update Debian
+      ansible.builtin.apt:
+        update_cache: yes
+      when: ansible_os_family == 'Debian'
+
+    - name: update RedHat
+      ansible.builtin.yum:
+        update_cache: yes
+      when: ansible_os_family == 'RedHat'
+
+    - ansible.builtin.package:
+        name:
+          - wrk
+        state: present
+
+- hosts: master
+  tasks:
+    - name: remove whoami service
+      command: "docker service rm whoami"
+      become: yes
+      ignore_errors: True
+
+    - name: create whoami service
+      command: "docker service create --name whoami --publish published=8080,target=80 --replicas 1 containous/whoami"
+      become: yes
+
+
+- hosts: localhost
+  gather_facts: yes
+  tasks:
+    - name: wrk 1
+      command: "wrk -t4 -c5 -d30s http://{{ hostvars | first }}:8080"
+      register: wrk_output
+
+    - name:
+      ansible.builtin.debug:
+        msg: '{{ wrk_output.stdout_lines | select("search", "Req/Sec") }}'
+
+- hosts: master
+  tasks:
+    - name: remove whoami service
+      command: "docker service rm whoami"
+      become: yes
+      ignore_errors: True
+
+    - name: create whoami service
+      command: "docker service create --name whoami --publish published=8080,target=80 --replicas 2 containous/whoami"
+      become: yes
+
+
+- hosts: localhost
+  gather_facts: yes
+  tasks:
+    - name: wrk 1
+      command: "wrk -t4 -c5 -d30s http://{{ hostvars | first }}:8080"
+      register: wrk_output
+
+    - name:
+      ansible.builtin.debug:
+        msg: '{{ wrk_output.stdout_lines | select("search", "Req/Sec") }}'
+
+- hosts: master
+  tasks:
+    - name: remove whoami service
+      command: "docker service rm whoami"
+      become: yes
+      ignore_errors: True
+
+    - name: create whoami service
+      command: "docker service create --name whoami --publish published=8080,target=80 --replicas 4 containous/whoami"
+      become: yes
+
+
+- hosts: localhost
+  gather_facts: yes
+  tasks:
+    - name: wrk 1
+      command: "wrk -t4 -c5 -d30s http://{{ hostvars | first }}:8080"
+      register: wrk_output
+
+    - name:
+      ansible.builtin.debug:
+        msg: '{{ wrk_output.stdout_lines | select("search", "Req/Sec") }}'
+
+- hosts: master
+  tasks:
+    - name: remove whoami service
+      command: "docker service rm whoami"
+      become: yes
+      ignore_errors: True
+
+    - name: create whoami service
+      command: "docker service create --name whoami --publish published=8080,target=80 --replicas 8 containous/whoami"
+      become: yes
+
+
+- hosts: localhost
+  gather_facts: yes
+  tasks:
+    - name: wrk 1
+      command: "wrk -t4 -c5 -d30s http://{{ hostvars | first }}:8080"
+      register: wrk_output
+
+    - name:
+      ansible.builtin.debug:
+        msg: '{{ wrk_output.stdout_lines | select("search", "Req/Sec") }}'

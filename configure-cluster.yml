@@ -1,0 +1,152 @@
+---
+- hosts: all
+  become: true
+  tasks:
+
+    - name: update Debian
+      ansible.builtin.apt:
+        update_cache: yes
+      when: ansible_os_family == 'Debian'
+
+    - name: update RedHat
+      ansible.builtin.yum:
+        update_cache: yes
+      when: ansible_os_family == 'RedHat'
+
+- hosts: cluster
+  gather_facts: yes
+  become: yes
+  tasks:
+    - ansible.builtin.package:
+        name:
+            - docker
+            - docker-engine
+            - docker.io
+            - containerd
+            - runc
+        state: absent
+
+    - ansible.builtin.package:
+        name:
+          - apt-transport-https
+          - ca-certificates
+          - curl
+          - gnupg
+          - lsb-release
+        state: present
+
+    - name: Add Docker GPG apt Key
+      apt_key:
+        url: https://download.docker.com/linux/ubuntu/gpg
+        state: present
+      become: yes
+
+    - name: update Debian
+      ansible.builtin.apt:
+        update_cache: yes
+      when: ansible_os_family == 'Debian'
+
+    - name: update RedHat
+      ansible.builtin.yum:
+        update_cache: yes
+      when: ansible_os_family == 'RedHat'
+
+    - ansible.builtin.shell: "echo $(lsb_release -cs)"
+      register: dist
+
+
+    - name: Add Docker Repository
+      apt_repository:
+        repo: deb https://download.docker.com/linux/ubuntu "{{ dist.stdout }}" stable
+        state: present
+      become: yes
+
+
+    - name: update Debian
+      ansible.builtin.apt:
+        update_cache: yes
+      when: ansible_os_family == 'Debian'
+
+    - name: update RedHat
+      ansible.builtin.yum:
+        update_cache: yes
+      when: ansible_os_family == 'RedHat'
+
+
+    - ansible.builtin.shell: "dpkg --configure -a"
+      become: yes
+
+
+    - package:
+        name:
+        - docker-ce
+        - docker-ce-cli
+        - containerd.io
+        state: present
+      become: yes
+
+    - name: Restart service docker, in all cases
+      service:
+        name: docker
+        state: restarted
+      ignore_errors: yes
+      become: yes
+
+    - ansible.builtin.command: docker run hello-world
+      register: docker_output
+
+    - ansible.builtin.shell: "docker swarm leave --force"
+      become: yes
+      ignore_errors: yes
+
+- hosts: master
+  tasks:
+
+    - ansible.builtin.debug:
+        msg: "docker swarm init  | grep 'docker swarm join --token'"
+
+    - name: docker swarm init
+      ansible.builtin.shell: "docker swarm init | grep 'docker swarm join --token'"
+      become: yes
+      register: join_cmd
+
+    - name: Add join cmd to dummy host
+      ansible.builtin.add_host:
+        name: "join_cmd_holder"
+        cmd: "{{ join_cmd.stdout }}"
+
+- hosts: worker
+  tasks:
+    - name: print join cmd
+      ansible.builtin.debug:
+        msg: "[Worker] {{ hostvars['join_cmd_holder']['cmd'] }}"
+
+    - name: join
+      ansible.builtin.shell: "{{ hostvars['join_cmd_holder']['cmd'] }}"
+      become: yes
+
+
+- hosts: master
+  tasks:
+    - name: get nodes
+      become: yes
+      command: docker node ls
+      register: nodes_out
+
+    - name: print nodes
+      ansible.builtin.debug:
+        var: nodes_out
+
+    - name: remove visualizer
+      command: "docker service rm viz"
+      become: yes
+      ignore_errors: True
+
+    - name: run visualizer
+      command: "docker service create --name=viz --publish=5000:8080/tcp --constraint=node.role==manager --mount=type=bind,src=/var/run/docker.sock,dst=/var/run/docker.sock dockersamples/visualizer"
+      become: yes
+      register: visualizer
+
+    - name: print swarm_service
+      ansible.builtin.debug:
+        var: visualizer
